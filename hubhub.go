@@ -15,19 +15,41 @@ import (
 	"time"
 )
 
-// GitHub credentials.
+// Global configuration.
 var (
-	User  string
-	Token string
-	API   = "https://api.github.com"
-
-	DebugURL  = false // Show URLs as they're requested.
-	DebugBody = false // Show body of requests.
+	User      string                     // GitHub username.
+	Token     string                     // GitHub access token or password.
+	API       = "https://api.github.com" // API base URL.
+	DebugURL  = false                    // Show URLs as they're requested.
+	DebugBody = false                    // Show body of requests.
 )
 
+// ErrNotOK is used when the status code is not 200 OK.
+type ErrNotOK struct {
+	Method, URL string
+	Status      string
+	StatusCode  int
+}
+
+func (e ErrNotOK) Error() string {
+	return fmt.Sprintf("code %s for %s %s", e.Status, e.Method, e.URL)
+}
+
+var client = http.Client{Timeout: 10 * time.Second}
+
 // Request something from the GitHub API.
+//
+// The response body will be unmarshaled in to scan unless the response code is
+// 204 (No Content). A response code higher than 399 will return an ErrNotOK
+// error, but won't affect the behaviour of this function.
+//
+// Body on the returned *http.Response is closed.
+//
+// This will use the global User and Token, which must be set.
 func Request(scan interface{}, method, url string) (*http.Response, error) {
-	client := http.Client{Timeout: 10 * time.Second}
+	if User == "" || Token == "" {
+		panic("hubhub: must set User and Token")
+	}
 
 	if DebugURL {
 		fmt.Printf("%v %v\n", method, url)
@@ -38,7 +60,7 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 		return nil, err
 	}
 	//if args.header != nil {
-	//	req.Header = args.header
+	//	req.Header = header
 	//}
 
 	if User != "" && Token != "" {
@@ -51,8 +73,6 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 	}
 	defer resp.Body.Close() // nolint: errcheck
 
-	// TODO: check for non-2xx status?
-
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return resp, err
@@ -62,7 +82,23 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 		fmt.Println(string(data))
 	}
 
-	err = json.Unmarshal(data, scan)
+	// Some endpoints return 204 when there is no content (e.g. getting
+	// information about a repo without any code).
+	if resp.StatusCode != http.StatusNoContent {
+		err = json.Unmarshal(data, scan)
+	}
+
+	if resp.StatusCode >= 400 {
+		// Intentionally override the JSON status error; chances are this is the
+		// root cause.
+		err = ErrNotOK{
+			Status:     resp.Status,
+			StatusCode: resp.StatusCode,
+			Method:     method,
+			URL:        url,
+		}
+	}
+
 	return resp, err
 }
 
@@ -70,11 +106,11 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 //
 // From the GitHub API docs:
 //
-// If the data hasn't been cached when you query a repository's statistics,
+// "If the data hasn't been cached when you query a repository's statistics,
 // you'll receive a 202 response; a background job is also fired to start
 // compiling these statistics. Give the job a few moments to complete, and then
 // submit the request again. If the job has completed, that request will receive
-// a 200 response with the statistics in the response body.
+// a 200 response with the statistics in the response body."
 func RequestStat(scan interface{}, method, url string, maxWait time.Duration) error {
 	start := time.Now()
 	for {
@@ -84,7 +120,7 @@ func RequestStat(scan interface{}, method, url string, maxWait time.Duration) er
 
 		resp, err := Request(scan, method, url)
 		if err != nil {
-			if resp.StatusCode == 202 {
+			if resp.StatusCode == http.StatusAccepted {
 				// Ignore json errors on 202; the output is {}, which won't
 				// unmarshal in to e.g. an array type.
 				if _, ok := err.(*json.UnmarshalTypeError); ok {
@@ -96,15 +132,15 @@ func RequestStat(scan interface{}, method, url string, maxWait time.Duration) er
 			}
 		}
 
-		if resp.StatusCode == 202 {
+		switch resp.StatusCode {
+		case http.StatusOK:
+			return nil
+		case http.StatusAccepted:
 			time.Sleep(2 * time.Second)
-		}
-		if resp.StatusCode == 200 {
-			break
+		case http.StatusNoContent:
+			return nil
 		}
 	}
-
-	return nil
 }
 
 // Repository in GitHub.
@@ -123,10 +159,13 @@ type info struct {
 // ListRepos lists all repositories for a user or organisation.
 //
 // The name is in the form of "orgs/OrganisationName" or "user/Username".
+//
+// This first gets a count of repositories so we can parallelize the pagination,
+// which speeds up large organisations/users at the expense of slowing down
+// smaller ones.
+//
+// TODO: try making a more generic pagination function.
 func ListRepos(name string) ([]Repository, error) {
-	// Get count of repositories so we can speed parallelize the pagination.
-	// Speeds up large organisations/users at the expense of slowing down
-	// smaller ones.
 	var i info
 	_, err := Request(&i, "GET", fmt.Sprintf("%s/%s", API, name))
 	if err != nil {
