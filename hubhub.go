@@ -20,11 +20,18 @@ var (
 	User  string
 	Token string
 	API   = "https://api.github.com"
+
+	DebugURL  = false // Show URLs as they're requested.
+	DebugBody = false // Show body of requests.
 )
 
 // Request something from the GitHub API.
 func Request(scan interface{}, method, url string) (*http.Response, error) {
 	client := http.Client{Timeout: 10 * time.Second}
+
+	if DebugURL {
+		fmt.Printf("%v %v\n", method, url)
+	}
 
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
@@ -51,7 +58,9 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 		return resp, err
 	}
 
-	//fmt.Println(string(data))
+	if DebugBody {
+		fmt.Println(string(data))
+	}
 
 	err = json.Unmarshal(data, scan)
 	return resp, err
@@ -75,7 +84,16 @@ func RequestStat(scan interface{}, method, url string, maxWait time.Duration) er
 
 		resp, err := Request(scan, method, url)
 		if err != nil {
-			return err
+			if resp.StatusCode == 202 {
+				// Ignore json errors on 202; the output is {}, which won't
+				// unmarshal in to e.g. an array type.
+				if _, ok := err.(*json.UnmarshalTypeError); ok {
+					err = nil
+				}
+			}
+			if err != nil {
+				return err
+			}
 		}
 
 		if resp.StatusCode == 202 {
