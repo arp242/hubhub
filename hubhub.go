@@ -1,7 +1,10 @@
-// Package hubhub is a set of utility functions for working with the GitHub API.
-//
 // Copyright 2018 © Martin Tournoij
 // See the bottom of this file for the full copyright.
+
+// Package hubhub is a set of utility functions for working with the GitHub API.
+//
+// It's not a "client library"; but just a few convenience functions that I
+// found myself re-creating a bunch of times in different programs.
 package hubhub // import "arp242.net/hubhub"
 
 import (
