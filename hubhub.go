@@ -12,8 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -53,6 +53,8 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 	if User == "" || Token == "" {
 		panic("hubhub: must set User and Token")
 	}
+
+	url = API + url
 
 	if DebugURL {
 		fmt.Printf("%v %v\n", method, url)
@@ -146,68 +148,86 @@ func RequestStat(scan interface{}, method, url string, maxWait time.Duration) er
 	}
 }
 
-// Repository in GitHub.
-type Repository struct {
-	Name     string    `json:"name"`
-	Archived bool      `json:"archived"`
-	Language string    `json:"language"`
-	PushedAt time.Time `json:"pushed_at"`
-	Topics   []string  `json:"topics"`
-}
-
-type info struct {
-	PublicRepos  int `json:"public_repos"`
-	PrivateRepos int `json:"total_private_repos"`
-}
-
-// ListRepos lists all repositories for a user or organisation.
+// Paginate an index request.
 //
-// The name is in the form of "orgs/OrganisationName" or "user/Username".
+// if nPages is higher than zero it will get exactly that number of pages in
+// parallel. If it is zero it will get every page in serial until the last
+// page.
 //
-// This first gets a count of repositories so we can parallelize the pagination,
-// which speeds up large organisations/users at the expense of slowing down
-// smaller ones.
-//
-// TODO: try making a more generic pagination function.
-func ListRepos(name string) ([]Repository, error) {
-	var i info
-	_, err := Request(&i, "GET", fmt.Sprintf("%s/%s", API, name))
-	if err != nil {
-		return nil, err
+// TODO: Could be prettier.
+// TODO: Allow specifying per_page
+func Paginate(scan interface{}, method, url string, nPages int) error {
+	t := reflect.TypeOf(scan)
+	if t.Kind() != reflect.Ptr {
+		panic("not a pointer")
+	}
+	t = t.Elem()
+	if t.Kind() != reflect.Slice {
+		panic("not a slice")
 	}
 
 	var (
-		nPages   = int(math.Ceil((float64(i.PublicRepos) + float64(i.PrivateRepos)) / 100.0))
-		allRepos []Repository
-		errs     []error
-		lock     sync.Mutex
-		wg       sync.WaitGroup
+		slice = reflect.Indirect(reflect.ValueOf(scan))
+		errs  []error
+		lock  sync.Mutex
+		wg    sync.WaitGroup
 	)
 
-	wg.Add(nPages)
-	for i := 1; i <= nPages; i++ {
-		go func(i int) {
+	getPage := func(i int) bool {
+		if nPages > 0 {
 			defer wg.Done()
+		}
 
-			var repos []Repository
-			_, err := Request(&repos, "GET", fmt.Sprintf("%s/%s/repos?per_page=100&page=%d", API, name, i))
-			if err != nil {
-				lock.Lock()
-				errs = append(errs, err)
-				lock.Unlock()
-				return
-			}
+		s := reflect.New(t).Interface()
+		_, err := Request(&s, method, fmt.Sprintf("%s?page=%d", url, i)) // TODO: better URL parsing
+		if err != nil {
 			lock.Lock()
-			allRepos = append(allRepos, repos...)
+			errs = append(errs, err)
 			lock.Unlock()
-		}(i)
+
+			if nPages == 0 {
+				return true
+			}
+			return false
+		}
+
+		v := reflect.ValueOf(s).Elem()
+		if v.Len() == 0 {
+			return true
+		}
+
+		lock.Lock()
+		slice.Set(reflect.AppendSlice(slice, v))
+		lock.Unlock()
+		return false
 	}
-	wg.Wait()
+
+	if nPages > 0 {
+		wg.Add(nPages)
+	}
+
+	l := nPages
+	if l == 0 {
+		l = 999
+	}
+	for i := 1; i <= l; i++ {
+		if nPages == 0 {
+			lastPage := getPage(i)
+			if lastPage {
+				break
+			}
+		} else {
+			go getPage(i)
+		}
+	}
+	if nPages > 0 {
+		wg.Wait()
+	}
 
 	if len(errs) > 0 {
-		return allRepos, fmt.Errorf("%#v", errs)
+		return fmt.Errorf("%s", errs)
 	}
-	return allRepos, err
+	return nil
 }
 
 // Copyright 2018 © Martin Tournoij
