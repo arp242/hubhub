@@ -14,6 +14,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 )
@@ -54,7 +55,9 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 		panic("hubhub: must set User and Token")
 	}
 
-	url = API + url
+	if !strings.HasPrefix(url, "https://") {
+		url = API + url
+	}
 
 	if DebugURL {
 		fmt.Printf("%v %v\n", method, url)
@@ -64,6 +67,7 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	//req.Header.Set("User-Agent", "Carpetsmoker/mkcode")
 	//if args.header != nil {
 	//	req.Header = header
 	//}
