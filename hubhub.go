@@ -125,7 +125,7 @@ func RequestStat(scan interface{}, method, url string, maxWait time.Duration) er
 
 		resp, err := Request(scan, method, url)
 		if err != nil {
-			if resp.StatusCode == http.StatusAccepted {
+			if resp != nil && resp.StatusCode == http.StatusAccepted {
 				// Ignore json errors on 202; the output is {}, which won't
 				// unmarshal in to e.g. an array type.
 				if _, ok := err.(*json.UnmarshalTypeError); ok {
@@ -156,6 +156,7 @@ func RequestStat(scan interface{}, method, url string, maxWait time.Duration) er
 //
 // TODO: Could be prettier.
 // TODO: Allow specifying per_page
+// TODO: Method is probably superfluous as all requests with pagination are GET?
 func Paginate(scan interface{}, method, url string, nPages int) error {
 	t := reflect.TypeOf(scan)
 	if t.Kind() != reflect.Ptr {
