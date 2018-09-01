@@ -75,7 +75,7 @@ func TestPaginate(t *testing.T) {
 				t.Errorf("no panic")
 			}
 		}()
-		Paginate(repos, "", "", 0)
+		Paginate(repos, "", 0)
 	})
 	t.Run("noslice", func(t *testing.T) {
 		var repos repo
@@ -85,13 +85,13 @@ func TestPaginate(t *testing.T) {
 				t.Errorf("no panic")
 			}
 		}()
-		Paginate(repos, "", "", 0)
+		Paginate(repos, "", 0)
 	})
 
 	t.Run("3-pages", func(t *testing.T) {
 		var repos []repo
 
-		err := Paginate(&repos, "GET", "/users/Carpetsmoker/repos", 3)
+		err := Paginate(&repos, "/users/Carpetsmoker/repos", 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -107,7 +107,7 @@ func TestPaginate(t *testing.T) {
 	t.Run("0-pages", func(t *testing.T) {
 		var repos []repo
 
-		err := Paginate(&repos, "GET", "/users/Carpetsmoker/repos", 0)
+		err := Paginate(&repos, "/users/Carpetsmoker/repos", 0)
 		if err != nil {
 			t.Fatal(err)
 		}

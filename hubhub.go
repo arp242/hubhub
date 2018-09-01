@@ -139,8 +139,7 @@ doreq:
 //
 // TODO: Could be prettier.
 // TODO: Allow specifying per_page
-// TODO: Method is probably superfluous as all requests with pagination are GET?
-func Paginate(scan interface{}, method, url string, nPages int) error {
+func Paginate(scan interface{}, url string, nPages int) error {
 	t := reflect.TypeOf(scan)
 	if t.Kind() != reflect.Ptr {
 		panic("hubhub: not a pointer")
@@ -163,7 +162,9 @@ func Paginate(scan interface{}, method, url string, nPages int) error {
 		}
 
 		s := reflect.New(t).Interface()
-		_, err := Request(&s, method, fmt.Sprintf("%s?page=%d", url, i)) // TODO: better URL parsing
+
+		// TODO: better URL parsing
+		_, err := Request(&s, "GET", fmt.Sprintf("%s?page=%d", url, i))
 		if err != nil {
 			lock.Lock()
 			errs = append(errs, err)
