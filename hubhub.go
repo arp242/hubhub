@@ -26,31 +26,43 @@ var (
 	API       = "https://api.github.com" // API base URL.
 	DebugURL  = false                    // Show URLs as they're requested.
 	DebugBody = false                    // Show body of requests.
+	MaxWait   = 30 * time.Second         // Max time to wait on 202 Accepted responses.
 )
 
-// ErrNotOK is used when the status code is not 200 OK.
-type ErrNotOK struct {
+// NotOKError is used when the status code is not 200 OK.
+type NotOKError struct {
 	Method, URL string
 	Status      string
 	StatusCode  int
 }
 
-func (e ErrNotOK) Error() string {
+func (e NotOKError) Error() string {
 	return fmt.Sprintf("code %s for %s %s", e.Status, e.Method, e.URL)
 }
+
+// ErrWait is used when we've waited longer than MaxWait for 202 Accepted.
+var ErrWait = errors.New("waited longer than MaxWait and still getting 202 Accepted")
 
 var client = http.Client{Timeout: 10 * time.Second}
 
 // Request something from the GitHub API.
 //
 // The response body will be unmarshaled in to scan unless the response code is
-// 204 (No Content). A response code higher than 399 will return an ErrNotOK
-// error, but won't affect the behaviour of this function.
+// 204 (No Content).
 //
-// Body on the returned *http.Response is closed.
+// If the response code is 202 (Accepted) the HTTP request will be retried every
+// two seconds until it returns a 200 OK with data. The ErrWait error will be
+// returned if this takes longer than MaxWait.
+//
+// A response code higher than 399 will return a NotOKError error, but won't
+// affect the behaviour of this function.
+//
+// The Body on the returned *http.Response is closed.
 //
 // This will use the global User and Token, which must be set.
 func Request(scan interface{}, method, url string) (*http.Response, error) {
+	start := time.Now()
+
 	if User == "" || Token == "" {
 		panic("hubhub: must set User and Token")
 	}
@@ -59,28 +71,36 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 		url = API + url
 	}
 
-	if DebugURL {
-		fmt.Printf("%v %v\n", method, url)
-	}
-
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	//req.Header.Set("User-Agent", "Carpetsmoker/mkcode")
-	//if args.header != nil {
-	//	req.Header = header
-	//}
+
+	req.Header.Set("User-Agent", fmt.Sprintf(
+		"Go-http-client/1.1; User=%s; client=hubhub", User))
 
 	if User != "" && Token != "" {
 		req.SetBasicAuth(User, Token)
 	}
 
+doreq:
+	if DebugURL {
+		fmt.Printf("%v %v\n", method, url)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return resp, err
 	}
 	defer resp.Body.Close() // nolint: errcheck
+
+	// 202 Accepted: re-try the request after a short delay.
+	if resp.StatusCode == http.StatusAccepted {
+		if start.Sub(start) > MaxWait {
+			return resp, ErrWait
+		}
+		time.Sleep(2 * time.Second)
+		goto doreq
+	}
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -100,7 +120,7 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 	if resp.StatusCode >= 400 {
 		// Intentionally override the JSON status error; chances are this is the
 		// root cause.
-		err = ErrNotOK{
+		err = NotOKError{
 			Status:     resp.Status,
 			StatusCode: resp.StatusCode,
 			Method:     method,
@@ -109,47 +129,6 @@ func Request(scan interface{}, method, url string) (*http.Response, error) {
 	}
 
 	return resp, err
-}
-
-// RequestStat is like Request, but retry on 202 response codes.
-//
-// From the GitHub API docs:
-//
-// "If the data hasn't been cached when you query a repository's statistics,
-// you'll receive a 202 response; a background job is also fired to start
-// compiling these statistics. Give the job a few moments to complete, and then
-// submit the request again. If the job has completed, that request will receive
-// a 200 response with the statistics in the response body."
-func RequestStat(scan interface{}, method, url string, maxWait time.Duration) error {
-	start := time.Now()
-	for {
-		if start.Sub(start) > maxWait {
-			return errors.New("timed out")
-		}
-
-		resp, err := Request(scan, method, url)
-		if err != nil {
-			if resp != nil && resp.StatusCode == http.StatusAccepted {
-				// Ignore json errors on 202; the output is {}, which won't
-				// unmarshal in to e.g. an array type.
-				if _, ok := err.(*json.UnmarshalTypeError); ok {
-					err = nil
-				}
-			}
-			if err != nil {
-				return err
-			}
-		}
-
-		switch resp.StatusCode {
-		case http.StatusOK:
-			return nil
-		case http.StatusAccepted:
-			time.Sleep(2 * time.Second)
-		case http.StatusNoContent:
-			return nil
-		}
-	}
 }
 
 // Paginate an index request.
@@ -164,11 +143,11 @@ func RequestStat(scan interface{}, method, url string, maxWait time.Duration) er
 func Paginate(scan interface{}, method, url string, nPages int) error {
 	t := reflect.TypeOf(scan)
 	if t.Kind() != reflect.Ptr {
-		panic("not a pointer")
+		panic("hubhub: not a pointer")
 	}
 	t = t.Elem()
 	if t.Kind() != reflect.Slice {
-		panic("not a slice")
+		panic("hubhub: not a slice")
 	}
 
 	var (

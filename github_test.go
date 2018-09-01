@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 )
 
 func init() {
 	User = os.Getenv("GITHUB_USER")
-	Token = os.Getenv("GITHUB_PASS")
+	Token = os.Getenv("GITHUB_TOKEN")
 }
 
 func TestRequest(t *testing.T) {
@@ -48,28 +47,17 @@ func TestRequestStat(t *testing.T) {
 	var r []struct {
 		Total int64 `json:"Total"`
 	}
-	err := RequestStat(&r, "GET", "/repos/Carpetsmoker/hubhub/stats/contributors", 300*time.Second)
+	_, err := Request(&r, "GET", "/repos/Carpetsmoker/hubhub/stats/contributors")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(r) < 1 {
-		t.Fatalf("0-legth in scan?")
+		t.Fatalf("0-length in scan?")
 	}
 
 	if r[0].Total < 6 {
 		t.Errorf("total wrong: %v", r[0].Total)
-	}
-}
-
-func TestListRepos(t *testing.T) {
-	repos, err := ListRepos("users/Carpetsmoker")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(repos) < 50 {
-		t.Fatalf("unexpected length: %v", len(repos))
 	}
 }
 
@@ -100,13 +88,16 @@ func TestPaginate(t *testing.T) {
 		Paginate(repos, "", "", 0)
 	})
 
-	t.Run("2-pages", func(t *testing.T) {
+	t.Run("3-pages", func(t *testing.T) {
 		var repos []repo
 
-		err := Paginate(&repos, "GET", "/users/Carpetsmoker/repos", 2)
+		err := Paginate(&repos, "GET", "/users/Carpetsmoker/repos", 3)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		fmt.Println(len(repos))
+		fmt.Println(repos)
 
 		if len(repos) < 66 {
 			t.Fatalf("unexpected length: %v", len(repos))
@@ -120,9 +111,6 @@ func TestPaginate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		fmt.Println(len(repos))
-		fmt.Println(repos)
 
 		if len(repos) < 66 {
 			t.Fatalf("unexpected length: %v", len(repos))
