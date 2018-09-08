@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -139,16 +141,18 @@ doreq:
 // parallel. If it is zero it will get every page in serial until the last
 // page.
 //
+// The URL may contain query parameters, but the "page" parameter will be
+// discarded.
+//
 // TODO: Could be prettier.
-// TODO: Allow specifying per_page
-func Paginate(scan interface{}, url string, nPages int) error {
+func Paginate(scan interface{}, uri string, nPages int) error {
 	t := reflect.TypeOf(scan)
 	if t.Kind() != reflect.Ptr {
-		panic("hubhub: not a pointer")
+		panic("hubhub: scan if not a pointer")
 	}
 	t = t.Elem()
 	if t.Kind() != reflect.Slice {
-		panic("hubhub: not a slice")
+		panic("hubhub: scan is not a slice")
 	}
 
 	var (
@@ -158,6 +162,11 @@ func Paginate(scan interface{}, url string, nPages int) error {
 		wg    sync.WaitGroup
 	)
 
+	u, err := url.Parse(uri)
+	if err != nil {
+		return err
+	}
+
 	getPage := func(i int) bool {
 		if nPages > 0 {
 			defer wg.Done()
@@ -165,8 +174,8 @@ func Paginate(scan interface{}, url string, nPages int) error {
 
 		s := reflect.New(t).Interface()
 
-		// TODO: better URL parsing
-		_, err := Request(&s, "GET", fmt.Sprintf("%s?page=%d", url, i))
+		u.Query().Set("page", strconv.FormatInt(int64(i), 10))
+		_, err = Request(&s, "GET", u.String())
 		if err != nil {
 			lock.Lock()
 			errs = append(errs, err)
