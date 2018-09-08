@@ -91,16 +91,18 @@ doreq:
 	if err != nil {
 		return resp, err
 	}
-	defer resp.Body.Close() // nolint: errcheck
 
 	// 202 Accepted: re-try the request after a short delay.
 	if resp.StatusCode == http.StatusAccepted {
+		_ = resp.Body.Close()
 		if start.Sub(start) > MaxWait {
 			return resp, ErrWait
 		}
 		time.Sleep(2 * time.Second)
 		goto doreq
 	}
+
+	defer resp.Body.Close() // nolint: errcheck
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
