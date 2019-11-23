@@ -18,7 +18,7 @@ func TestRequest(t *testing.T) {
 		var r struct {
 			ID int64 `json:"id"`
 		}
-		_, err := Request(&r, "GET", "/repos/Carpetsmoker/hubhub")
+		_, err := Request(&r, "GET", "/repos/arp242/hubhub")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -32,7 +32,7 @@ func TestRequest(t *testing.T) {
 		var r struct {
 			ID int64 `json:"id"`
 		}
-		_, err := Request(&r, "GET", "/repos/Carpetsmoker/will_never_exist")
+		_, err := Request(&r, "GET", "/repos/arp242/will_never_exist")
 		if err == nil {
 			t.Fatal("err is not nil")
 		}
@@ -47,7 +47,7 @@ func TestRequestStat(t *testing.T) {
 	var r []struct {
 		Total int64 `json:"Total"`
 	}
-	_, err := Request(&r, "GET", "/repos/Carpetsmoker/hubhub/stats/contributors")
+	_, err := Request(&r, "GET", "/repos/arp242/hubhub/stats/contributors")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestPaginate(t *testing.T) {
 	t.Run("3-pages", func(t *testing.T) {
 		var repos []repo
 
-		err := Paginate(&repos, "/users/Carpetsmoker/repos", 3)
+		err := Paginate(&repos, "/users/arp242/repos", 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -107,7 +107,7 @@ func TestPaginate(t *testing.T) {
 	t.Run("0-pages", func(t *testing.T) {
 		var repos []repo
 
-		err := Paginate(&repos, "/users/Carpetsmoker/repos", 0)
+		err := Paginate(&repos, "/users/arp242/repos", 0)
 		if err != nil {
 			t.Fatal(err)
 		}

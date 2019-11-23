@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -49,41 +50,38 @@ var client = http.Client{Timeout: 10 * time.Second}
 
 // Request something from the GitHub API.
 //
-// The response body will be unmarshaled in to scan unless the response code is
+// The response body is unmarshaled to scan unless the response code is
 // 204 (No Content).
 //
-// If the response code is 202 (Accepted) the HTTP request will be retried every
-// two seconds until it returns a 200 OK with data. The ErrWait error will be
-// returned if this takes longer than MaxWait.
+// If the response code is 202 Accepted the HTTP request will be retried every
+// two seconds until it returns a 200 OK. The ErrWait error will be returned if
+// this takes longer than MaxWait.
 //
 // A response code higher than 399 will return a NotOKError error, but won't
 // affect the behaviour of this function.
 //
-// The Body on the returned *http.Response is closed.
+// The Body on the returned http.Response is closed.
 //
 // This will use the global User and Token, which must be set.
-func Request(scan interface{}, method, url string) (*http.Response, error) {
-	start := time.Now()
-
+func Request(scan interface{}, method, url string, body io.Reader) (*http.Response, error) {
 	if User == "" || Token == "" {
 		panic("hubhub: must set User and Token")
 	}
+
+	start := time.Now()
 
 	if !strings.HasPrefix(url, "https://") {
 		url = API + url
 	}
 
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
 
+	req.SetBasicAuth(User, Token)
 	req.Header.Set("User-Agent", fmt.Sprintf(
 		"Go-http-client/1.1; User=%s; client=hubhub", User))
-
-	if User != "" && Token != "" {
-		req.SetBasicAuth(User, Token)
-	}
 
 doreq:
 	if DebugURL {
@@ -94,10 +92,10 @@ doreq:
 		return resp, err
 	}
 
-	// 202 Accepted: re-try the request after a short delay.
+	// 202 Accepted: retry the request after a short delay.
 	if resp.StatusCode == http.StatusAccepted {
 		_ = resp.Body.Close()
-		if start.Sub(start) > MaxWait {
+		if time.Now().Sub(start) > MaxWait {
 			return resp, ErrWait
 		}
 		time.Sleep(2 * time.Second)
@@ -106,19 +104,19 @@ doreq:
 
 	defer resp.Body.Close() // nolint: errcheck
 
-	data, err := ioutil.ReadAll(resp.Body)
+	rbody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return resp, err
 	}
 
 	if DebugBody {
-		fmt.Println(string(data))
+		fmt.Println(string(rbody))
 	}
 
 	// Some endpoints return 204 when there is no content (e.g. getting
 	// information about a repo without any code).
 	if resp.StatusCode != http.StatusNoContent {
-		err = json.Unmarshal(data, scan)
+		err = json.Unmarshal(rbody, scan)
 	}
 
 	if resp.StatusCode >= 400 {
@@ -148,7 +146,7 @@ doreq:
 func Paginate(scan interface{}, uri string, nPages int) error {
 	t := reflect.TypeOf(scan)
 	if t.Kind() != reflect.Ptr {
-		panic("hubhub: scan if not a pointer")
+		panic("hubhub: scan is not a pointer")
 	}
 	t = t.Elem()
 	if t.Kind() != reflect.Slice {
@@ -175,7 +173,7 @@ func Paginate(scan interface{}, uri string, nPages int) error {
 		s := reflect.New(t).Interface()
 
 		u.Query().Set("page", strconv.FormatInt(int64(i), 10))
-		_, err = Request(&s, "GET", u.String())
+		_, err = Request(&s, "GET", u.String(), nil)
 		if err != nil {
 			lock.Lock()
 			errs = append(errs, err)
