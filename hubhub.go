@@ -5,7 +5,7 @@
 //
 // It's not a "client library"; but just a few convenience functions that I
 // found myself re-creating a bunch of times in different programs.
-package hubhub // import "arp242.net/hubhub"
+package hubhub
 
 import (
 	"encoding/json"

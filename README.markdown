@@ -1,7 +1,6 @@
-[![GoDoc](https://godoc.org/arp242.net/hubhub?status.svg)](https://godoc.org/arp242.net/hubhub)
-[![Build Status](https://travis-ci.org/Carpetsmoker/hubhub.svg?branch=master)](https://travis-ci.org/Carpetsmoker/hubhub)
-
 hubhub is a set of utility functions for working with the GitHub API.
+
+Import as `zgo.at/hubhub`. API docs: https://godocs.io/zgo.at/hubhub
 
 It's not a "client library"; but just a few convenience functions that I found
 myself re-creating a bunch of times in different programs.

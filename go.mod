@@ -1,3 +1,3 @@
-module arp242.net/hubhub
+module zgo.at/hubhub
 
 go 1.12
