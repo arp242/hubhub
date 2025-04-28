@@ -24,8 +24,7 @@ import (
 
 // Global configuration.
 var (
-	User      string                     // GitHub username.
-	Token     string                     // GitHub access token or password.
+	Token     string                     // GitHub access token.
 	API       = "https://api.github.com" // API base URL.
 	DebugURL  = false                    // Show URLs as they're requested.
 	DebugBody = false                    // Show body of requests.
@@ -65,10 +64,10 @@ var client = http.Client{
 //
 // The Body on the returned http.Response is closed.
 //
-// This will use the global User and Token, which must be set.
+// This will use the global Token, which must be set.
 func Request(scan any, method, url string, body io.Reader) (*http.Response, error) {
-	if User == "" || Token == "" {
-		panic("hubhub: must set User and Token")
+	if Token == "" {
+		panic("hubhub: must set Token")
 	}
 
 	start := time.Now()
@@ -82,9 +81,8 @@ func Request(scan any, method, url string, body io.Reader) (*http.Response, erro
 		return nil, err
 	}
 
-	req.SetBasicAuth(User, Token)
-	req.Header.Set("User-Agent", fmt.Sprintf(
-		"Go-http-client/1.1; User=%s; client=hubhub", User))
+	req.Header.Set("Authorization", "Bearer "+Token)
+	req.Header.Set("User-Agent", "Go-http-client/1.1; client=hubhub")
 
 doreq:
 	if DebugURL {
