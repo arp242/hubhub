@@ -46,7 +46,10 @@ func (e NotOKError) Error() string {
 // ErrWait is used when we've waited longer than MaxWait for 202 Accepted.
 var ErrWait = errors.New("waited longer than MaxWait and still getting 202 Accepted")
 
-var client = http.Client{Timeout: 10 * time.Second}
+var client = http.Client{
+	Timeout:       10 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
 
 // Request something from the GitHub API.
 //
@@ -63,7 +66,7 @@ var client = http.Client{Timeout: 10 * time.Second}
 // The Body on the returned http.Response is closed.
 //
 // This will use the global User and Token, which must be set.
-func Request(scan interface{}, method, url string, body io.Reader) (*http.Response, error) {
+func Request(scan any, method, url string, body io.Reader) (*http.Response, error) {
 	if User == "" || Token == "" {
 		panic("hubhub: must set User and Token")
 	}
@@ -115,7 +118,7 @@ doreq:
 
 	// Some endpoints return 204 when there is no content (e.g. getting
 	// information about a repo without any code).
-	if resp.StatusCode != http.StatusNoContent {
+	if resp.StatusCode != http.StatusNoContent && scan != nil {
 		err = json.Unmarshal(rbody, scan)
 	}
 
@@ -143,7 +146,7 @@ doreq:
 // discarded.
 //
 // TODO: Could be prettier.
-func Paginate(scan interface{}, uri string, nPages int) error {
+func Paginate(scan any, uri string, nPages int) error {
 	t := reflect.TypeOf(scan)
 	if t.Kind() != reflect.Ptr {
 		panic("hubhub: scan is not a pointer")
